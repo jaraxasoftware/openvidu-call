@@ -1,0 +1,225 @@
+name: openvidu-call E2E
+on:
+  push:
+  #   paths:
+  #     - 'openvidu-components-angular/**'
+  #     - 'openvidu-browser/**'
+  # pull_request:
+  #   branches:
+  #     - master
+
+  repository_dispatch:
+    types: [openvidu-components-angular]
+  workflow_dispatch:
+
+jobs:
+  prepare_openvidu_components_angular:
+    name: Setup
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          COMMIT_MESSAGE: ${{ github.event.client_payload.commit-message }}
+          COMMIT_REF: ${{ github.event.client_payload.commit-ref }}
+        run: echo Commit openvidu-components-angular
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build openvidu-components-angular
+        run: |
+          git clone --depth 1 https://github.com/OpenVidu/openvidu openvidu && \
+          cd openvidu/openvidu-components-angular && \
+          npm install && \
+          npm run lib:build && \
+          npm run lib:pack && \
+          mv dist/openvidu-components-angular/openvidu-components-angular-*.tgz ../../
+          cd ../../ && \
+          rm -rf openvidu && \
+          ls -al
+          # tar -cvf artifacts.tar .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: artifacts
+          path: ${{ github.workspace }}/**.tgz
+          if-no-files-found: error
+
+  auth_e2e_test:
+    needs: prepare_openvidu_components_angular
+    name: Auth tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: actions/download-artifact@v4
+        with:
+          name: artifacts
+      # - name: Run Browserless Chrome
+      #   run: docker run -d -p 3000:3000 --network host browserless/chrome:1.53-chrome-stable
+      - name: Run Chrome
+        run:  docker run --network=host -d -p 4444:4444 selenium/standalone-chrome:127.0
+      - name: Run openvidu-local-deployment
+        run: |
+          git clone --depth 1 https://github.com/OpenVidu/openvidu-local-deployment
+          cd openvidu-local-deployment/community
+          ./configure_lan_private_ip_linux.sh
+          docker compose up -d
+
+      - name: Install dependencies and build openvidu-call
+        run: |
+          npm install openvidu-components-angular-*.tgz --prefix frontend && \
+          npm install --prefix backend && \
+          npm run build --prefix backend && \
+          npm run build --prefix frontend && \
+          mv frontend/dist/openvidu-call/ backend/dist/public/
+
+      - name: Wait for openvidu-local-deployment
+        run: |
+          until curl -s -f -o /dev/null http://localhost:7880; do
+            echo "Waiting for openvidu-local-deployment to be ready..."
+            sleep 5
+          done
+      - name: Serve openvidu-call
+        env:
+          CALL_PRIVATE_ACCESS: true
+        run: npm run start --prefix backend &
+      - name: Run tests
+        env:
+          LAUNCH_MODE: CI
+        run: npm run e2e:auth --prefix frontend
+
+  home_e2e_test:
+    needs: prepare_openvidu_components_angular
+    name: Home tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: actions/download-artifact@v4
+        with:
+          name: artifacts
+      # - name: Run Browserless Chrome
+      #   run: docker run -d -p 3000:3000 --network host browserless/chrome:1.53-chrome-stable
+      - name: Run Chrome
+        run:  docker run --network=host -d -p 4444:4444 selenium/standalone-chrome:127.0
+      - name: Run openvidu-local-deployment
+        run: |
+          git clone --depth 1 https://github.com/OpenVidu/openvidu-local-deployment
+          cd openvidu-local-deployment/community
+          ./configure_lan_private_ip_linux.sh
+          docker compose up -d
+
+      - name: Install dependencies and build openvidu-call
+        run: |
+          npm install openvidu-components-angular-*.tgz --prefix frontend && \
+          npm install --prefix backend && \
+          npm run build --prefix backend && \
+          npm run build --prefix frontend && \
+          mv frontend/dist/openvidu-call/ backend/dist/public/
+
+      - name: Wait for openvidu-local-deployment
+        run: |
+          until curl -s -f -o /dev/null http://localhost:7880; do
+            echo "Waiting for openvidu-local-deployment to be ready..."
+            sleep 5
+          done
+      - name: Serve openvidu-call
+        run: npm run start --prefix backend &
+      - name: Run tests
+        env:
+          LAUNCH_MODE: CI
+          CALL_PRIVATE_ACCESS: false
+        run: npm run e2e:home --prefix frontend
+
+  room_e2e_test:
+    needs: prepare_openvidu_components_angular
+    name: Room tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: actions/download-artifact@v4
+        with:
+          name: artifacts
+      # - name: Run Browserless Chrome
+      #   run: docker run -d -p 3000:3000 --network host browserless/chrome:1.53-chrome-stable
+      - name: Run Chrome
+        run:  docker run --network=host -d -p 4444:4444 selenium/standalone-chrome:127.0
+      - name: Run openvidu-local-deployment
+        run: |
+          git clone --depth 1 https://github.com/OpenVidu/openvidu-local-deployment
+          cd openvidu-local-deployment/community
+          ./configure_lan_private_ip_linux.sh
+          docker compose up -d
+
+      - name: Install dependencies and build openvidu-call
+        run: |
+          npm install openvidu-components-angular-*.tgz --prefix frontend && \
+          npm install --prefix backend && \
+          npm run build --prefix backend && \
+          npm run build --prefix frontend && \
+          mv frontend/dist/openvidu-call/ backend/dist/public/
+
+      - name: Wait for openvidu-local-deployment
+        run: |
+          until curl -s -f -o /dev/null http://localhost:7880; do
+            echo "Waiting for openvidu-local-deployment to be ready..."
+            sleep 5
+          done
+      - name: Serve openvidu-call
+        run: npm run start --prefix backend &
+      - name: Run tests
+        env:
+          LAUNCH_MODE: CI
+          CALL_PRIVATE_ACCESS: false
+        run: npm run e2e:room --prefix frontend
+
+  recording_e2e_test:
+    needs: prepare_openvidu_components_angular
+    name: Recording tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: actions/download-artifact@v4
+        with:
+          name: artifacts
+      # - name: Run Browserless Chrome
+      #   run: docker run -d -p 3000:3000 --network host browserless/chrome:1.53-chrome-stable
+      - name: Run Chrome
+        run:  docker run --network=host -d -p 4444:4444 selenium/standalone-chrome:127.0
+      - name: Run openvidu-local-deployment
+        run: |
+          git clone --depth 1 https://github.com/OpenVidu/openvidu-local-deployment
+          cd openvidu-local-deployment/community
+          ./configure_lan_private_ip_linux.sh
+          docker compose up -d
+
+      - name: Install dependencies and build openvidu-call
+        run: |
+          npm install openvidu-components-angular-*.tgz --prefix frontend && \
+          npm install --prefix backend && \
+          npm run build --prefix backend && \
+          npm run build --prefix frontend && \
+          mv frontend/dist/openvidu-call/ backend/dist/public/
+
+      - name: Wait for openvidu-local-deployment
+        run: |
+          until curl -s -f -o /dev/null http://localhost:7880; do
+            echo "Waiting for openvidu-local-deployment to be ready..."
+            sleep 5
+          done
+      - name: Serve openvidu-call
+        run: npm run start --prefix backend &
+      - name: Run tests
+        env:
+          LAUNCH_MODE: CI
+          CALL_PRIVATE_ACCESS: false
+        run: npm run e2e:recordings --prefix frontend

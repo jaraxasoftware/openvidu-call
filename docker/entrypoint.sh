@@ -1,15 +1,40 @@
 #!/bin/sh
 
-[[ -z "${OPENVIDU_URL}" ]] && export OPENVIDU_URL=$(curl -s ifconfig.co)
-[[ -z "${OPENVIDU_SECRET}" ]] && export OPENVIDU_SECRET=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)
+# Function to handle termination signals
+terminate_process() {
+    echo "Terminating Node.js process..."
+    pkill -TERM node
+}
 
-# openvidu-call configuration
-cat>/opt/openvidu-call/.env<<EOF
-SERVER_PORT=${SERVER_PORT}
-OPENVIDU_URL=${OPENVIDU_URL}
-OPENVIDU_SECRET=${OPENVIDU_SECRET}
-CALL_OPENVIDU_CERTTYPE=${CALL_OPENVIDU_CERTTYPE}
-EOF
+# Trap termination signals
+trap terminate_process TERM INT
 
-cd /opt/openvidu-call
-nodemon openvidu-call-server.js
+# If a custom config directory is not provided,
+# check minimal required environment variables
+if [ -z "${CALL_CONFIG_DIR}" ]; then
+    if [ -z "${LIVEKIT_URL}" ]; then
+        echo "LIVEKIT_URL is required"
+        echo "example: docker run -e LIVEKIT_URL=https://livekit-server:7880 -e LIVEKIT_API_KEY=api_key -e LIVEKIT_API_SECRET=api_secret -p 6080:6080 openvidu-call"
+        exit 1
+    fi
+    if [ -z "${LIVEKIT_API_KEY}" ]; then
+        echo "LIVEKIT_API_KEY is required"
+        echo "example: docker run -e LIVEKIT_URL=https://livekit-server:7880 -e LIVEKIT_API_KEY=api_key -e LIVEKIT_API_SECRET=api_secret -p 6080:6080 openvidu-call"
+        exit 1
+    fi
+    if [ -z "${LIVEKIT_API_SECRET}" ]; then
+        echo "LIVEKIT_API_SECRET is required"
+        echo "example: docker run -e LIVEKIT_URL=https://livekit-server:7880 -e LIVEKIT_API_KEY=api_key -e LIVEKIT_API_SECRET=api_secret -p 6080:6080 openvidu-call"
+        exit 1
+    fi
+fi
+
+
+cd /opt/openvidu-call || { echo "Can't cd into /opt/openvidu-call"; exit 1; }
+node dist/src/server.js &
+
+# Save the PID of the Node.js process
+node_pid=$!
+
+# Wait for the Node.js process to finish
+wait $node_pid
